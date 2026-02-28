@@ -132,6 +132,38 @@ app.put('/api/meds-reset', authenticateToken, async (req, res) => {
     }
 });
 
+app.post('/api/notify', authenticateToken, async (req, res) => {
+    const { message } = req.body;
+
+    const LINE_ACCESS_TOKEN = 'IuQUck2cNlkrqT+RB5t9kJGS99ZLVYrHBTmNrviYtbOcld4901JTTwst1PrCsgbJt05J+45lyuySm/ZJx4hk1z4ZdjGdOhyI8Om3YyBwIbwJaiaR7fAV7LMti2QcHv8sBYqHM+qi39dA6mjK7AxDmgdB04t89/1O/w1cDnyilFU=';
+    const LINE_USER_ID = 'Ua5418ecc9ae9eb2fa5d7a1ad6ec46359';
+
+    try {
+        const response = await fetch('https://api.line.me/v2/bot/message/push', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${LINE_ACCESS_TOKEN}`
+            },
+            body: JSON.stringify({
+                to: LINE_USER_ID,
+                messages: [{ type: 'text', text: message }]
+            })
+        });
+
+        if (response.ok) {
+            res.json({ message: 'ส่งแจ้งเตือนเข้า LINE สำเร็จ!' });
+        } else {
+            const errorData = await response.json();
+            console.error('LINE API Error:', errorData);
+            res.status(500).json({ message: 'ส่ง LINE ไม่สำเร็จ ตรวจสอบ Token/User ID' });
+        }
+    } catch (error) {
+        console.error('Fetch Error:', error);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ' });
+    }
+});
+
 app.listen(3000, () => {
     console.log('Backend วิ่งอยู่ที่ http://localhost:3000');
 });
