@@ -70,6 +70,15 @@ app.put('/api/meds/:id', async (req, res) => {
         res.status(404).json({ message: 'ไม่พบข้อมูลยานี้' });
     }
 });
+// ลบรายการยา (Delete)
+app.delete('/api/meds/:id', async (req, res) => {
+    try {
+        await Medicine.findByIdAndDelete(req.params.id);
+        res.json({ message: 'ลบยาสำเร็จ!' });
+    } catch (error) {
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการลบข้อมูล' });
+    }
+});
 
 app.listen(3000, () => {
     console.log('Backend วิ่งอยู่ที่ http://localhost:3000');
