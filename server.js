@@ -51,14 +51,15 @@ app.get('/api/meds', authenticateToken, (req, res) => {
     res.json(userMeds);
 });
 
-// 2. เพิ่มยา (บันทึกชื่อเจ้าของด้วย)
+// --- แก้ไขส่วนเพิ่มยาใน server.js ---
 app.post('/api/meds', authenticateToken, (req, res) => {
     const newMed = {
         id: Date.now(),
         name: req.body.name,
         time: req.body.time,
         status: 'ยังไม่ได้กิน',
-        owner: req.user.username // ✨ เก็บว่าใครเป็นเจ้าของ
+        // ✨ แก้ตรงนี้: ถ้าส่งชื่อคนไข้มาให้ใช้ชื่อนั้น ถ้าไม่ส่งมาให้ใช้ชื่อตัวเอง
+        owner: req.body.patientName || req.user.username 
     };
     meds.push(newMed);
     res.status(201).json({ medicine: newMed });
