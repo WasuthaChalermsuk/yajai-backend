@@ -1,145 +1,94 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ เชื่อมต่อ MongoDB สำเร็จ!'))
-  .catch((err) => console.log('❌ เชื่อมต่อฐานข้อมูลล้มเหลว:', err));
+const SECRET_KEY = 'YOUR_SUPER_SECRET_KEY'; // เปลี่ยนเป็นรหัสลับของคุณ
 
-const userSchema = new mongoose.Schema({
-    username: { type: String, required: true, unique: true },
-    password: { type: String, required: true }
-});
-const User = mongoose.model('User', userSchema);
+// ฐานข้อมูลจำลอง (ในงานจริงควรใช้ MongoDB)
+let users = []; 
+let meds = []; 
 
-const medicineSchema = new mongoose.Schema({
-    name: String,
-    time: String,
-    status: { type: String, default: 'ยังไม่ได้กิน' },
-    userId: { type: String, required: true }
-});
-
-medicineSchema.set('toJSON', {
-    transform: (document, returnedObject) => {
-        returnedObject.id = returnedObject._id.toString();
-        delete returnedObject._id;
-        delete returnedObject.__v;
-    }
-});
-const Medicine = mongoose.model('Medicine', medicineSchema);
-
+// Middleware ตรวจสอบ Token
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; 
-    if (!token) return res.status(401).json({ message: 'กรุณาล็อกอิน' });
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.sendStatus(401);
 
-    jwt.verify(token, process.env.JWT_SECRET || 'yajai-secret-key', (err, user) => {
-        if (err) return res.status(403).json({ message: 'ตั๋วหมดอายุหรือไม่ถูกต้อง' });
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) return res.sendStatus(403);
         req.user = user;
         next();
     });
 };
 
+// --- ระบบ User ---
 app.post('/api/register', async (req, res) => {
-    try {
-        const hashedPassword = await bcrypt.hash(req.body.password, 10);
-        const newUser = new User({ username: req.body.username, password: hashedPassword });
-        await newUser.save();
-        res.json({ message: 'สมัครสมาชิกสำเร็จ!' });
-    } catch (error) {
-        res.status(400).json({ message: 'สมัครล้มเหลว (ชื่อผู้ใช้อาจซ้ำ)' });
-    }
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+    const user = { username: req.body.username, password: hashedPassword };
+    users.push(user);
+    res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ' });
 });
 
 app.post('/api/login', async (req, res) => {
-    try {
-        const user = await User.findOne({ username: req.body.username });
-        if (!user) return res.status(400).json({ message: 'ไม่พบชื่อผู้ใช้นี้' });
+    const user = users.find(u => u.username === req.body.username);
+    if (!user || !await bcrypt.compare(req.body.password, user.password)) {
+        return res.status(400).json({ message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+    }
+    const token = jwt.sign({ username: user.username }, SECRET_KEY);
+    res.json({ token, username: user.username });
+});
 
-        const isMatch = await bcrypt.compare(req.body.password, user.password);
-        if (!isMatch) return res.status(400).json({ message: 'รหัสผ่านไม่ถูกต้อง' });
+// --- ระบบจัดการยา (แยกตามเจ้าของ) ---
 
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'yajai-secret-key', { expiresIn: '1d' });
-        res.json({ message: 'เข้าสู่ระบบสำเร็จ!', token: token, username: user.username });
-    } catch (error) {
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ' });
+// 1. ดึงยา (เฉพาะของตัวเอง)
+app.get('/api/meds', authenticateToken, (req, res) => {
+    const userMeds = meds.filter(m => m.owner === req.user.username);
+    res.json(userMeds);
+});
+
+// 2. เพิ่มยา (บันทึกชื่อเจ้าของด้วย)
+app.post('/api/meds', authenticateToken, (req, res) => {
+    const newMed = {
+        id: Date.now(),
+        name: req.body.name,
+        time: req.body.time,
+        status: 'ยังไม่ได้กิน',
+        owner: req.user.username // ✨ เก็บว่าใครเป็นเจ้าของ
+    };
+    meds.push(newMed);
+    res.status(201).json({ medicine: newMed });
+});
+
+// 3. อัปเดตสถานะ (ต้องเป็นเจ้าของถึงจะแก้ได้)
+app.put('/api/meds/:id', authenticateToken, (req, res) => {
+    const med = meds.find(m => m.id === parseInt(req.params.id) && m.owner === req.user.username);
+    if (med) {
+        med.status = 'กินแล้ว 💖';
+        res.json(med);
+    } else {
+        res.status(404).send('ไม่พบรายการยา');
     }
 });
 
-app.get('/api/meds', authenticateToken, async (req, res) => {
-    try {
-        const meds = await Medicine.find({ userId: req.user.id });
-        res.json(meds);
-    } catch (error) {
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูล' });
-    }
+// 4. ลบยา (ต้องเป็นเจ้าของถึงลบได้)
+app.delete('/api/meds/:id', authenticateToken, (req, res) => {
+    meds = meds.filter(m => !(m.id === parseInt(req.params.id) && m.owner === req.user.username));
+    res.status(204).send();
 });
 
-app.post('/api/meds', authenticateToken, async (req, res) => {
-    try {
-        const newMedicine = new Medicine({
-            name: req.body.name,
-            time: req.body.time,
-            status: 'ยังไม่ได้กิน',
-            userId: req.user.id
-        });
-        const savedMedicine = await newMedicine.save();
-        res.json({ message: 'เพิ่มยาสำเร็จ!', medicine: savedMedicine });
-    } catch (error) {
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' });
-    }
-});
-
-app.put('/api/meds/:id', authenticateToken, async (req, res) => {
-    try {
-        const updatedMed = await Medicine.findOneAndUpdate(
-            { _id: req.params.id, userId: req.user.id },
-            { status: 'กินแล้ว 💖' }, 
-            { new: true }
-        );
-        res.json({ message: 'อัปเดตสถานะสำเร็จ!', medicine: updatedMed });
-    } catch (error) {
-        res.status(404).json({ message: 'ไม่พบข้อมูลยานี้' });
-    }
-});
-
-app.delete('/api/meds/:id', authenticateToken, async (req, res) => {
-    try {
-        await Medicine.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
-        res.json({ message: 'ลบยาสำเร็จ!' });
-    } catch (error) {
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการลบข้อมูล' });
-    }
-});
-
-// ✨ ฟีเจอร์ใหม่: รีเซ็ตสถานะยาทุกตัวของ User ให้เป็น "ยังไม่ได้กิน"
-app.put('/api/meds-reset', authenticateToken, async (req, res) => {
-    try {
-        await Medicine.updateMany(
-            { userId: req.user.id }, 
-            { $set: { status: 'ยังไม่ได้กิน' } }
-        );
-        res.json({ message: 'รีเซ็ตข้อมูลสำหรับวันใหม่เรียบร้อย!' });
-    } catch (error) {
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการรีเซ็ตข้อมูล' });
-    }
-});
-
+// --- ระบบ LINE Notification ---
 app.post('/api/notify', authenticateToken, async (req, res) => {
     const { message } = req.body;
-
     const LINE_ACCESS_TOKEN = 'IuQUck2cNlkrqT+RB5t9kJGS99ZLVYrHBTmNrviYtbOcld4901JTTwst1PrCsgbJt05J+45lyuySm/ZJx4hk1z4ZdjGdOhyI8Om3YyBwIbwJaiaR7fAV7LMti2QcHv8sBYqHM+qi39dA6mjK7AxDmgdB04t89/1O/w1cDnyilFU=';
     const LINE_USER_ID = 'Ua5418ecc9ae9eb2fa5d7a1ad6ec46359';
 
     try {
-        const response = await fetch('https://api.line.me/v2/bot/message/push', {
+        await fetch('https://api.line.me/v2/bot/message/push', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -150,20 +99,11 @@ app.post('/api/notify', authenticateToken, async (req, res) => {
                 messages: [{ type: 'text', text: message }]
             })
         });
-
-        if (response.ok) {
-            res.json({ message: 'ส่งแจ้งเตือนเข้า LINE สำเร็จ!' });
-        } else {
-            const errorData = await response.json();
-            console.error('LINE API Error:', errorData);
-            res.status(500).json({ message: 'ส่ง LINE ไม่สำเร็จ ตรวจสอบ Token/User ID' });
-        }
+        res.json({ message: 'ส่ง LINE สำเร็จ' });
     } catch (error) {
-        console.error('Fetch Error:', error);
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ' });
+        res.status(500).send('Error');
     }
 });
 
-app.listen(3000, () => {
-    console.log('Backend วิ่งอยู่ที่ http://localhost:3000');
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
