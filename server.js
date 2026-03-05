@@ -84,7 +84,24 @@ app.put('/api/meds/edit/:id', authenticateToken, async (req, res) => {
 
 app.put('/api/meds/:id', authenticateToken, async (req, res) => {
     const med = await Med.findById(req.params.id);
-    if (med && (med.owner === req.user.username || req.user.username === 'admin')) { med.status = 'กินแล้ว 💖'; await med.save(); res.json(med); } 
+    if (med && (med.owner === req.user.username || req.user.username === 'admin')) { 
+        med.status = 'กินแล้ว 💖'; 
+        await med.save(); 
+        
+        // ✨ ส่งแจ้งเตือนหา Admin ทันทีที่คนไข้กินยา!
+        try {
+            const adminSub = await Sub.findOne({ username: 'admin' });
+            if (adminSub && adminSub.sub) {
+                const payload = JSON.stringify({ 
+                    title: '✅ กินยาเรียบร้อย!', 
+                    body: `คุณ ${med.owner} กินยา ${med.name} (มื้อ${med.meal || 'เช้า'}) แล้วครับ 💖` 
+                });
+                await webpush.sendNotification(adminSub.sub, payload);
+            }
+        } catch(err) { console.log('Push to Admin Error:', err); }
+
+        res.json(med); 
+    } 
     else res.sendStatus(404);
 });
 
@@ -100,7 +117,23 @@ app.get('/api/history', authenticateToken, async (req, res) => {
     res.json(req.user.username === 'admin' ? await History.find().sort({ _id: -1 }).limit(50) : await History.find({ owner: req.user.username }).sort({ _id: -1 }).limit(14));
 });
 
-// ⏰ ✨ ระบบแจ้งเตือนเมื่อถึงเวลากินยา (เช็คทุกๆ 1 นาที)
+app.post('/api/call-admin', authenticateToken, async (req, res) => {
+    try {
+        const adminSub = await Sub.findOne({ username: 'admin' });
+        if (adminSub && adminSub.sub) {
+            const payload = JSON.stringify({ 
+                title: '🚨 การแจ้งเตือนจากคนไข้!', 
+                body: `คุณ ${req.user.username} กดปุ่มเรียกหาผู้ดูแลครับ กรุณาตรวจสอบด้วยน้า` 
+            });
+            await webpush.sendNotification(adminSub.sub, payload);
+            res.json({ message: 'Success' });
+        } else {
+            res.status(400).json({ message: 'Admin Not Subscribed' });
+        }
+    } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+
 cron.schedule('* * * * *', async () => {
     try {
         // 1. ดึงเวลาปัจจุบันของไทยแบบเป๊ะๆ (เช่น "08:30", "18:45")
