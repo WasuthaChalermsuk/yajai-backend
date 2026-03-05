@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const cron = require('node-cron'); 
-const webpush = require('web-push'); // ✨ นำเข้า web-push
+const webpush = require('web-push');
 
 const app = express();
 app.use(cors());
@@ -12,7 +12,6 @@ app.use(express.json());
 
 const SECRET_KEY = 'yajai-secret-key'; 
 
-// ✨ ตั้งค่ากุญแจ VAPID ของคุณ (เอาจาก Terminal มาใส่ตรงนี้!)
 const publicVapidKey = 'BOSDiwWnjtEkd-PimXzb_PeyTJpX1J9KARBfm_mYwVDLL-3oJ8wBU2Vvwce4FTRHl1dDokD0096qeSlcJbSeE88';
 const privateVapidKey = 'wgjABXeHHgmfh_GuvWjRDX5p1doMaa95IZ50IVWqjRo';
 webpush.setVapidDetails('mailto:admin@yajai.com', publicVapidKey, privateVapidKey);
@@ -21,10 +20,11 @@ const MONGO_URI = 'mongodb+srv://wasuthachalermsuk_db_user:elKL8IjIOaUYYFAl@clus
 mongoose.connect(MONGO_URI).then(() => console.log('✅ Connected to MongoDB!'));
 
 const User = mongoose.model('User', new mongoose.Schema({ username: { type: String, required: true, unique: true }, password: { type: String, required: true } }));
-const Med = mongoose.model('Med', new mongoose.Schema({ name: String, time: String, meal: { type: String, default: 'เช้า' }, status: { type: String, default: 'ยังไม่ได้กิน' }, owner: String }));
-const History = mongoose.model('History', new mongoose.Schema({ date: String, owner: String, total: Number, taken: Number, percent: Number }));
 
-// ✨ สร้างตารางเก็บรหัสมือถือของคนไข้แต่ละคน
+// ✨ เพิ่ม stock เข้าไปในฐานข้อมูล
+const Med = mongoose.model('Med', new mongoose.Schema({ name: String, time: String, meal: { type: String, default: 'เช้า' }, status: { type: String, default: 'ยังไม่ได้กิน' }, owner: String, stock: { type: Number, default: 30 } }));
+
+const History = mongoose.model('History', new mongoose.Schema({ date: String, owner: String, total: Number, taken: Number, percent: Number }));
 const Sub = mongoose.model('Sub', new mongoose.Schema({ username: String, sub: Object }));
 
 const authenticateToken = (req, res, next) => {
@@ -57,13 +57,15 @@ app.get('/api/users', authenticateToken, async (req, res) => {
     res.json((await User.find({ username: { $ne: 'admin' } }).select('username')).map(u => u.username));
 });
 
+// ✨ ส่งค่า stock กลับไปให้หน้าบ้านด้วย
 app.get('/api/meds', authenticateToken, async (req, res) => {
     let meds = req.user.username === 'admin' ? await Med.find() : await Med.find({ owner: req.user.username }); 
-    res.json(meds.map(m => ({ id: m._id.toString(), name: m.name, time: m.time, meal: m.meal || 'เช้า', status: m.status, owner: m.owner })));
+    res.json(meds.map(m => ({ id: m._id.toString(), name: m.name, time: m.time, meal: m.meal || 'เช้า', status: m.status, owner: m.owner, stock: m.stock })));
 });
 
+// ✨ รับค่า stock มาจากตอนแอดมินสั่งยา
 app.post('/api/meds', authenticateToken, async (req, res) => {
-    const newMed = new Med({ name: req.body.name, time: req.body.time, meal: req.body.meal || 'เช้า', status: 'ยังไม่ได้กิน', owner: req.body.patientName || req.user.username });
+    const newMed = new Med({ name: req.body.name, time: req.body.time, meal: req.body.meal || 'เช้า', status: 'ยังไม่ได้กิน', owner: req.body.patientName || req.user.username, stock: req.body.stock || 30 });
     await newMed.save(); 
 
     try {
@@ -74,28 +76,37 @@ app.post('/api/meds', authenticateToken, async (req, res) => {
         }
     } catch(err) { console.log('Push Alert Error:', err); }
 
-    res.status(201).json({ medicine: { id: newMed._id.toString(), name: newMed.name, time: newMed.time, meal: newMed.meal, status: newMed.status, owner: newMed.owner } });
+    res.status(201).json({ medicine: { id: newMed._id.toString(), name: newMed.name, time: newMed.time, meal: newMed.meal, status: newMed.status, owner: newMed.owner, stock: newMed.stock } });
 });
 
 app.put('/api/meds/edit/:id', authenticateToken, async (req, res) => {
     const updatedMed = await Med.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
-    res.json({ id: updatedMed._id.toString(), name: updatedMed.name, time: updatedMed.time, meal: updatedMed.meal, status: updatedMed.status, owner: updatedMed.owner });
+    res.json({ id: updatedMed._id.toString(), name: updatedMed.name, time: updatedMed.time, meal: updatedMed.meal, status: updatedMed.status, owner: updatedMed.owner, stock: updatedMed.stock });
 });
 
 app.put('/api/meds/:id', authenticateToken, async (req, res) => {
     const med = await Med.findById(req.params.id);
     if (med && (med.owner === req.user.username || req.user.username === 'admin')) { 
         med.status = 'กินแล้ว 💖'; 
+        
+        // ✨ หักลบสต๊อกยา 1 เม็ด
+        if (med.stock > 0) med.stock -= 1; 
         await med.save(); 
         
         // ✨ ส่งแจ้งเตือนหา Admin ทันทีที่คนไข้กินยา!
         try {
             const adminSub = await Sub.findOne({ username: 'admin' });
             if (adminSub && adminSub.sub) {
-                const payload = JSON.stringify({ 
-                    title: '✅ กินยาเรียบร้อย!', 
-                    body: `คุณ ${med.owner} กินยา ${med.name} (มื้อ${med.meal || 'เช้า'}) แล้วครับ 💖` 
-                });
+                let alertMsg = `คุณ ${med.owner} กินยา ${med.name} (มื้อ${med.meal || 'เช้า'}) แล้วครับ 💖`;
+                let alertTitle = '✅ กินยาเรียบร้อย!';
+
+                // ✨ ถ้ายาเหลือ 5 เม็ดหรือน้อยกว่า ให้แจ้งเตือนฉุกเฉิน!
+                if (med.stock <= 5) {
+                    alertTitle = '🚨 ยาใกล้หมดแล้ว!';
+                    alertMsg += `\n⚠️ ด่วน! ยาเหลือแค่ ${med.stock} เม็ด ต้องเตรียมไปรับยาเพิ่มแล้วนะ!`;
+                }
+
+                const payload = JSON.stringify({ title: alertTitle, body: alertMsg });
                 await webpush.sendNotification(adminSub.sub, payload);
             }
         } catch(err) { console.log('Push to Admin Error:', err); }
@@ -136,19 +147,16 @@ app.post('/api/call-admin', authenticateToken, async (req, res) => {
 
 cron.schedule('* * * * *', async () => {
     try {
-        // 1. ดึงเวลาปัจจุบันของไทยแบบเป๊ะๆ (เช่น "08:30", "18:45")
         const bangkokTime = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Bangkok"}));
         const hours = String(bangkokTime.getHours()).padStart(2, '0');
         const minutes = String(bangkokTime.getMinutes()).padStart(2, '0');
         const nowTime = `${hours}:${minutes}`;
 
-        // 2. ค้นหายาที่ "เวลาตรงกับตอนนี้" และ "ยังไม่ได้กิน"
         const dueMeds = await Med.find({ time: nowTime, status: 'ยังไม่ได้กิน' });
 
         if (dueMeds.length > 0) {
             console.log(`⏰ ถึงเวลา ${nowTime} น. พบรายการยาที่ต้องกิน ${dueMeds.length} รายการ!`);
             
-            // 3. วนลูปส่งแจ้งเตือนให้เจ้าของยาทีละคน
             for (const med of dueMeds) {
                 const userSub = await Sub.findOne({ username: med.owner });
                 if (userSub && userSub.sub) {
