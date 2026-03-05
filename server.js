@@ -13,8 +13,7 @@ app.use(express.json());
 const SECRET_KEY = 'yajai-secret-key'; 
 
 // ✨ 1. ใส่ Channel Access Token ของบอท YaJai ตรงนี้
-const LINE_ACCESS_TOKEN = 'IuQUck2cNlkrqT+RB5t9kJGS99ZLVYrHBTmNrviYtbOcld4901JTTwst1PrCsgbJt05J+45lyuySm/ZJx4hk1z4ZdjGdOhyI8Om3YyBwIbwJaiaR7fAV7LMti2QcHv8sBYqHM+qi39dA6mjK7AxDmgdB04t89/1O/w1cDnyilFU= 
-'; 
+const LINE_ACCESS_TOKEN = 'IuQUck2cNlkrqT+RB5t9kJGS99ZLVYrHBTmNrviYtbOcld4901JTTwst1PrCsgbJt05J+45lyuySm/ZJx4hk1z4ZdjGdOhyI8Om3YyBwIbwJaiaR7fAV7LMti2QcHv8sBYqHM+qi39dA6mjK7AxDmgdB04t89/1O/w1cDnyilFU=';
 // ✨ 2. ตอนแรกปล่อยว่างไว้ก่อน เดี๋ยวเราค่อยมาเติมหลังจากได้ ID จาก Webhook แล้ว
 const LINE_TARGET_ID = 'ใส่_USER_ID_หรือ_GROUP_ID_ตรงนี้'; 
 
