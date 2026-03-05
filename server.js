@@ -31,6 +31,13 @@ const Sub = mongoose.model('Sub', new mongoose.Schema({ username: String, sub: O
 // ✨ เพิ่มตารางเก็บข้อความแชท
 const Message = mongoose.model('Message', new mongoose.Schema({ sender: String, receiver: String, text: String, timestamp: { type: Date, default: Date.now } }));
 
+// ✨ ตารางเก็บสมุดบันทึกอาการรายวัน
+const Diary = mongoose.model('Diary', new mongoose.Schema({ 
+    owner: String, 
+    note: String, 
+    timestamp: { type: Date, default: Date.now } 
+}));
+
 const sendLineMessage = async (textMsg) => {
     if (!LINE_ACCESS_TOKEN || LINE_TARGET_ID === 'ใส่_USER_ID_หรือ_GROUP_ID_ตรงนี้') return;
     try {
@@ -177,6 +184,24 @@ app.post('/api/call-admin', authenticateToken, async (req, res) => {
 
 cron.schedule('* * * * *', async () => { /* เดิม */ });
 cron.schedule('0 0 * * *', async () => { /* เดิม */ });
+
+
+// ================= API ROUTES (สมุดบันทึกอาการ) =================
+app.post('/api/diary', authenticateToken, async (req, res) => {
+    const newNote = new Diary({ owner: req.user.username, note: req.body.note });
+    await newNote.save();
+    // แจ้งเตือนแอดมินเวลามีคนไข้บ่นอาการ
+    await sendLineMessage(`📓 คุณ ${req.user.username} บันทึกอาการใหม่:\n"${req.body.note}"`);
+    res.status(201).json(newNote);
+});
+
+app.get('/api/diary/:target', authenticateToken, async (req, res) => {
+    // แอดมินดูของใครก็ได้, คนไข้ดูได้แค่ของตัวเอง
+    const target = req.user.username === 'admin' ? req.params.target : req.user.username;
+    const notes = await Diary.find({ owner: target }).sort({ timestamp: -1 });
+    res.json(notes);
+});
+
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
