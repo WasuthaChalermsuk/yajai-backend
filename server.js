@@ -100,6 +100,44 @@ app.get('/api/history', authenticateToken, async (req, res) => {
     res.json(req.user.username === 'admin' ? await History.find().sort({ _id: -1 }).limit(50) : await History.find({ owner: req.user.username }).sort({ _id: -1 }).limit(14));
 });
 
+// ⏰ ✨ ระบบแจ้งเตือนเมื่อถึงเวลากินยา (เช็คทุกๆ 1 นาที)
+cron.schedule('* * * * *', async () => {
+    try {
+        // 1. ดึงเวลาปัจจุบันของไทยแบบเป๊ะๆ (เช่น "08:30", "18:45")
+        const bangkokTime = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Bangkok"}));
+        const hours = String(bangkokTime.getHours()).padStart(2, '0');
+        const minutes = String(bangkokTime.getMinutes()).padStart(2, '0');
+        const nowTime = `${hours}:${minutes}`;
+
+        // 2. ค้นหายาที่ "เวลาตรงกับตอนนี้" และ "ยังไม่ได้กิน"
+        const dueMeds = await Med.find({ time: nowTime, status: 'ยังไม่ได้กิน' });
+
+        if (dueMeds.length > 0) {
+            console.log(`⏰ ถึงเวลา ${nowTime} น. พบรายการยาที่ต้องกิน ${dueMeds.length} รายการ!`);
+            
+            // 3. วนลูปส่งแจ้งเตือนให้เจ้าของยาทีละคน
+            for (const med of dueMeds) {
+                const userSub = await Sub.findOne({ username: med.owner });
+                if (userSub && userSub.sub) {
+                    const payload = JSON.stringify({ 
+                        title: '⏰ ถึงเวลากินยาแล้ว!', 
+                        body: `ยา: ${med.name} (มื้อ${med.meal || 'เช้า'}) \nรีบกินแล้วเข้าแอปมากด "✅ กินแล้ว" ด้วยนะครับ 💖` 
+                    });
+                    
+                    try {
+                        await webpush.sendNotification(userSub.sub, payload);
+                        console.log(`🔔 ส่งแจ้งเตือนให้คุณ ${med.owner} สำเร็จ`);
+                    } catch(err) {
+                        console.log(`❌ ส่งแจ้งเตือนให้คุณ ${med.owner} ไม่สำเร็จ:`, err);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('❌ Error checking due meds:', error);
+    }
+}, { scheduled: true, timezone: "Asia/Bangkok" });
+
 cron.schedule('0 0 * * *', async () => {
     try {
         const today = new Date().toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' });
