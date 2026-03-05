@@ -206,5 +206,20 @@ app.put('/api/meds/reset/all', authenticateToken, async (req, res) => {
     }
 });
 
+const cron = require('node-cron');
+
+cron.schedule('0 0 * * *', async () => {
+    try {
+        console.log('⏳ กำลังทำการรีเซ็ตสถานะยาประจำวัน...');
+        await Med.updateMany({}, { status: 'ยังไม่ได้กิน' });
+        console.log('✅ รีเซ็ตสถานะยาทุกรายการเป็น "ยังไม่ได้กิน" สำเร็จ! (Midnight Reset)');
+    } catch (error) {
+        console.error('❌ เกิดข้อผิดพลาดในการรีเซ็ตยาอัตโนมัติ:', error);
+    }
+}, {
+    scheduled: true,
+    timezone: "Asia/Bangkok" // ✨ สำคัญมาก: ระบุให้ยึดเวลาตามประเทศไทย
+});
+
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(` Server running on port ${PORT}`));
