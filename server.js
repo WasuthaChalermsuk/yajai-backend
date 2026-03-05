@@ -78,7 +78,7 @@ app.post('/api/meds', authenticateToken, async (req, res) => {
 });
 
 app.put('/api/meds/edit/:id', authenticateToken, async (req, res) => {
-    const updatedMed = await Med.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const updatedMed = await Med.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
     res.json({ id: updatedMed._id.toString(), name: updatedMed.name, time: updatedMed.time, meal: updatedMed.meal, status: updatedMed.status, owner: updatedMed.owner });
 });
 
