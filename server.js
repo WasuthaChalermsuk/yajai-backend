@@ -2,87 +2,162 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose'); // ใช้เชื่อม MongoDB
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const SECRET_KEY = 'YOUR_SUPER_SECRET_KEY'; // เปลี่ยนเป็นรหัสลับของคุณ
+const SECRET_KEY = 'yajai-secret-key'; 
 
-// ฐานข้อมูลจำลอง (ในงานจริงควรใช้ MongoDB)
-let users = []; 
-let meds = []; 
+// ✨ 1. เชื่อมต่อฐานข้อมูล MongoDB Atlas ของคุณ
+const MONGO_URI = 'mongodb+srv://wasuthachalermsuk_db_user:elKL8IjIOaUYYFAl@cluster0.i4iresm.mongodb.net/yajai?retryWrites=true&w=majority';
 
-// Middleware ตรวจสอบ Token
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('✅ Connected to MongoDB! (YaJai Database)'))
+  .catch(err => console.error('❌ MongoDB Connection Error:', err));
+
+// ✨ 2. สร้างโครงสร้างตารางข้อมูล
+const UserSchema = new mongoose.Schema({
+    username: { type: String, required: true, unique: true },
+    password: { type: String, required: true }
+});
+const User = mongoose.model('User', UserSchema);
+
+const MedSchema = new mongoose.Schema({
+    name: String,
+    time: String,
+    status: { type: String, default: 'ยังไม่ได้กิน' },
+    owner: String
+});
+const Med = mongoose.model('Med', MedSchema);
+
+// --- Middleware ตรวจสอบ Token ---
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.sendStatus(401);
+    if (!token) return res.status(401).json({ message: 'Unauthorized' });
 
     jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) return res.sendStatus(403);
+        if (err) return res.status(403).json({ message: 'Forbidden' });
         req.user = user;
         next();
     });
 };
 
-// --- ระบบ User ---
+// ==========================================
+//                 API ROUTES
+// ==========================================
+
+// 🟢 สมัครสมาชิก
 app.post('/api/register', async (req, res) => {
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
-    const user = { username: req.body.username, password: hashedPassword };
-    users.push(user);
-    res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ' });
+    try {
+        const { username, password } = req.body;
+        const existingUser = await User.findOne({ username });
+        if (existingUser) return res.status(400).json({ message: 'มีชื่อผู้ใช้นี้แล้วในระบบ' });
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = new User({ username, password: hashedPassword });
+        await newUser.save();
+
+        const token = jwt.sign({ username }, SECRET_KEY);
+        res.status(201).json({ token, username });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
 });
 
+// 🟢 ล็อกอิน
 app.post('/api/login', async (req, res) => {
-    const user = users.find(u => u.username === req.body.username);
-    if (!user || !await bcrypt.compare(req.body.password, user.password)) {
-        return res.status(400).json({ message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
-    }
-    const token = jwt.sign({ username: user.username }, SECRET_KEY);
-    res.json({ token, username: user.username });
-});
+    try {
+        const { username, password } = req.body;
+        const user = await User.findOne({ username });
+        if (!user || !await bcrypt.compare(password, user.password)) {
+            return res.status(400).json({ message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+        }
 
-// --- ระบบจัดการยา (แยกตามเจ้าของ) ---
-
-// 1. ดึงยา (เฉพาะของตัวเอง)
-app.get('/api/meds', authenticateToken, (req, res) => {
-    const userMeds = meds.filter(m => m.owner === req.user.username);
-    res.json(userMeds);
-});
-
-// --- แก้ไขส่วนเพิ่มยาใน server.js ---
-app.post('/api/meds', authenticateToken, (req, res) => {
-    const newMed = {
-        id: Date.now(),
-        name: req.body.name,
-        time: req.body.time,
-        status: 'ยังไม่ได้กิน',
-        // ✨ แก้ตรงนี้: ถ้าส่งชื่อคนไข้มาให้ใช้ชื่อนั้น ถ้าไม่ส่งมาให้ใช้ชื่อตัวเอง
-        owner: req.body.patientName || req.user.username 
-    };
-    meds.push(newMed);
-    res.status(201).json({ medicine: newMed });
-});
-
-// 3. อัปเดตสถานะ (ต้องเป็นเจ้าของถึงจะแก้ได้)
-app.put('/api/meds/:id', authenticateToken, (req, res) => {
-    const med = meds.find(m => m.id === parseInt(req.params.id) && m.owner === req.user.username);
-    if (med) {
-        med.status = 'กินแล้ว 💖';
-        res.json(med);
-    } else {
-        res.status(404).send('ไม่พบรายการยา');
+        const token = jwt.sign({ username }, SECRET_KEY);
+        res.json({ token, username });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
     }
 });
 
-// 4. ลบยา (ต้องเป็นเจ้าของถึงลบได้)
-app.delete('/api/meds/:id', authenticateToken, (req, res) => {
-    meds = meds.filter(m => !(m.id === parseInt(req.params.id) && m.owner === req.user.username));
-    res.status(204).send();
+// 🟢 ดึงข้อมูลยา
+app.get('/api/meds', authenticateToken, async (req, res) => {
+    try {
+        let meds;
+        if (req.user.username === 'admin') {
+            meds = await Med.find(); 
+        } else {
+            meds = await Med.find({ owner: req.user.username }); 
+        }
+        
+        const formattedMeds = meds.map(m => ({
+            id: m._id.toString(),
+            name: m.name,
+            time: m.time,
+            status: m.status,
+            owner: m.owner
+        }));
+        res.json(formattedMeds);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
 });
 
-// --- ระบบ LINE Notification ---
+// 🟢 เพิ่มยาใหม่
+app.post('/api/meds', authenticateToken, async (req, res) => {
+    try {
+        const newMed = new Med({
+            name: req.body.name,
+            time: req.body.time,
+            status: 'ยังไม่ได้กิน',
+            owner: req.body.patientName || req.user.username
+        });
+        await newMed.save(); 
+        
+        res.status(201).json({ 
+            medicine: {
+                id: newMed._id.toString(),
+                name: newMed.name,
+                time: newMed.time,
+                status: newMed.status,
+                owner: newMed.owner
+            } 
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// 🟢 อัปเดตสถานะการกินยา
+app.put('/api/meds/:id', authenticateToken, async (req, res) => {
+    try {
+        const med = await Med.findById(req.params.id);
+        if (med && (med.owner === req.user.username || req.user.username === 'admin')) {
+            med.status = 'กินแล้ว 💖';
+            await med.save();
+            res.json(med);
+        } else {
+            res.status(404).json({ message: 'ไม่พบรายการยา หรือไม่มีสิทธิ์' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// 🟢 ลบยา
+app.delete('/api/meds/:id', authenticateToken, async (req, res) => {
+    try {
+        await Med.findOneAndDelete({ _id: req.params.id });
+        res.status(204).send();
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// 🟢 แจ้งเตือน LINE Notify
 app.post('/api/notify', authenticateToken, async (req, res) => {
     const { message } = req.body;
     const LINE_ACCESS_TOKEN = 'IuQUck2cNlkrqT+RB5t9kJGS99ZLVYrHBTmNrviYtbOcld4901JTTwst1PrCsgbJt05J+45lyuySm/ZJx4hk1z4ZdjGdOhyI8Om3YyBwIbwJaiaR7fAV7LMti2QcHv8sBYqHM+qi39dA6mjK7AxDmgdB04t89/1O/w1cDnyilFU=';
@@ -102,9 +177,10 @@ app.post('/api/notify', authenticateToken, async (req, res) => {
         });
         res.json({ message: 'ส่ง LINE สำเร็จ' });
     } catch (error) {
+        console.error("LINE API Error:", error);
         res.status(500).send('Error');
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
