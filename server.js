@@ -182,5 +182,29 @@ app.post('/api/notify', authenticateToken, async (req, res) => {
     }
 });
 
+// 🟢 ดึงรายชื่อคนไข้ทั้งหมด (สำหรับให้ Admin เลือกใน Dropdown)
+app.get('/api/users', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.username !== 'admin') return res.status(403).json({ message: 'ไม่มีสิทธิ์' });
+        // ดึงชื่อทุกคนที่ไม่ใช่ admin
+        const usersList = await User.find({ username: { $ne: 'admin' } }).select('username');
+        res.json(usersList.map(u => u.username));
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// 🟢 รีเซ็ตสถานะยาทั้งหมด (สำหรับ Admin เริ่มวันใหม่)
+app.put('/api/meds/reset/all', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.username !== 'admin') return res.status(403).json({ message: 'ไม่มีสิทธิ์' });
+        // เปลี่ยนสถานะยาทุกตัวกลับเป็น 'ยังไม่ได้กิน'
+        await Med.updateMany({}, { status: 'ยังไม่ได้กิน' });
+        res.json({ message: 'รีเซ็ตสถานะยาทั้งหมดเรียบร้อย' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(` Server running on port ${PORT}`));
