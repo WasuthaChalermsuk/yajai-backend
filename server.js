@@ -195,7 +195,7 @@ app.post('/api/diaries', authenticateToken, async (req, res) => {
     res.status(201).json(newNote);
 });
 
-app.get('/api/diaries/:target', authenticateToken, async (req, res) => {
+app.get('/api/diary/:target', authenticateToken, async (req, res) => {
     // แอดมินดูของใครก็ได้, คนไข้ดูได้แค่ของตัวเอง
     const target = req.user.username === 'admin' ? req.params.target : req.user.username;
     const notes = await Diary.find({ owner: target }).sort({ timestamp: -1 });
