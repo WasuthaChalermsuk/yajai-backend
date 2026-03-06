@@ -29,7 +29,33 @@ const History = mongoose.model('History', new mongoose.Schema({ date: String, ow
 const Sub = mongoose.model('Sub', new mongoose.Schema({ username: String, sub: Object }));
 
 // ✨ เพิ่มตารางเก็บข้อความแชท
-const Message = mongoose.model('Message', new mongoose.Schema({ sender: String, receiver: String, text: String, timestamp: { type: Date, default: Date.now } }));
+const Message = mongoose.model('Message', new mongoose.Schema({ 
+    sender: String, 
+    receiver: String, 
+    text: String, 
+    image: String, // ✨ เพิ่มฟิลด์นี้สำหรับเก็บ Base64 ของรูป
+    timestamp: { type: Date, default: Date.now } 
+}));
+
+// แก้ไข Route ส่งข้อความ (ประมาณบรรทัดที่ 84)
+app.post('/api/messages', authenticateToken, async (req, res) => {
+    const { receiver, text, image } = req.body; // ✨ รับ image เพิ่มเข้ามา
+    const newMsg = new Message({ 
+        sender: req.user.username, 
+        receiver, 
+        text, 
+        image // ✨ เก็บลง DB
+    });
+    await newMsg.save();
+
+    // ปรับการแจ้งเตือน LINE ให้บอกว่ามีการส่งรูป
+    if (req.user.username !== 'admin' && receiver === 'admin') {
+        let lineNotifyText = `💬 ข้อความจาก ${req.user.username}: ${text || ''}`;
+        if (image) lineNotifyText += `\n🖼️ [ส่งรูปภาพมาด้วย]`;
+        await sendLineMessage(lineNotifyText);
+    }
+    res.status(201).json(newMsg);
+});
 
 // ✨ ตารางเก็บสมุดบันทึกอาการรายวัน
 const Diary = mongoose.model('Diary', new mongoose.Schema({ 
