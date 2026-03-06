@@ -187,7 +187,7 @@ cron.schedule('0 0 * * *', async () => { /* เดิม */ });
 
 
 // ================= API ROUTES (สมุดบันทึกอาการ) =================
-app.post('/api/diary', authenticateToken, async (req, res) => {
+app.post('/api/diaries', authenticateToken, async (req, res) => {
     const newNote = new Diary({ owner: req.user.username, note: req.body.note });
     await newNote.save();
     // แจ้งเตือนแอดมินเวลามีคนไข้บ่นอาการ
@@ -195,7 +195,7 @@ app.post('/api/diary', authenticateToken, async (req, res) => {
     res.status(201).json(newNote);
 });
 
-app.get('/api/diary/:target', authenticateToken, async (req, res) => {
+app.get('/api/diaries/:target', authenticateToken, async (req, res) => {
     // แอดมินดูของใครก็ได้, คนไข้ดูได้แค่ของตัวเอง
     const target = req.user.username === 'admin' ? req.params.target : req.user.username;
     const notes = await Diary.find({ owner: target }).sort({ timestamp: -1 });
