@@ -28,24 +28,12 @@ const Med = mongoose.model('Med', new mongoose.Schema({ name: String, time: Stri
 const History = mongoose.model('History', new mongoose.Schema({ date: String, owner: String, total: Number, taken: Number, percent: Number }));
 const Sub = mongoose.model('Sub', new mongoose.Schema({ username: String, sub: Object }));
 
-app.post('/api/messages', authenticateToken, async (req, res) => {
-    const { receiver, text, image } = req.body; // ✨ รับ image เพิ่มเข้ามา
-    const newMsg = new Message({ 
-        sender: req.user.username, 
-        receiver, 
-        text, 
-        image // ✨ เก็บลง DB
-    });
-    await newMsg.save();
 
-    // ปรับการแจ้งเตือน LINE ให้บอกว่ามีการส่งรูป
-    if (req.user.username !== 'admin' && receiver === 'admin') {
-        let lineNotifyText = `💬 ข้อความจาก ${req.user.username}: ${text || ''}`;
-        if (image) lineNotifyText += `\n🖼️ [ส่งรูปภาพมาด้วย]`;
-        await sendLineMessage(lineNotifyText);
-    }
-    res.status(201).json(newMsg);
-});
+const authenticateToken = (req, res, next) => {
+    const token = req.headers['authorization']?.split(' ')[1];
+    if (!token) return res.sendStatus(401);
+    jwt.verify(token, SECRET_KEY, (err, user) => { if (err) return res.sendStatus(403); req.user = user; next(); });
+};
 
 // ✨ เพิ่มตารางเก็บข้อความแชท
 const Message = mongoose.model('Message', new mongoose.Schema({ 
@@ -77,6 +65,26 @@ const sendLineMessage = async (textMsg) => {
     } catch (err) { console.error('❌ LINE Bot Push Error:', err); }
 };
 
+app.post('/api/messages', authenticateToken, async (req, res) => {
+    const { receiver, text, image } = req.body; // ✨ รับ image เพิ่มเข้ามา
+    const newMsg = new Message({ 
+        sender: req.user.username, 
+        receiver, 
+        text, 
+        image // ✨ เก็บลง DB
+    });
+    await newMsg.save();
+
+    // ปรับการแจ้งเตือน LINE ให้บอกว่ามีการส่งรูป
+    if (req.user.username !== 'admin' && receiver === 'admin') {
+        let lineNotifyText = `💬 ข้อความจาก ${req.user.username}: ${text || ''}`;
+        if (image) lineNotifyText += `\n🖼️ [ส่งรูปภาพมาด้วย]`;
+        await sendLineMessage(lineNotifyText);
+    }
+    res.status(201).json(newMsg);
+});
+
+
 app.post('/api/webhook', async (req, res) => {
     const events = req.body.events;
     if (events && events.length > 0) {
@@ -96,11 +104,6 @@ app.post('/api/webhook', async (req, res) => {
     res.sendStatus(200);
 });
 
-const authenticateToken = (req, res, next) => {
-    const token = req.headers['authorization']?.split(' ')[1];
-    if (!token) return res.sendStatus(401);
-    jwt.verify(token, SECRET_KEY, (err, user) => { if (err) return res.sendStatus(403); req.user = user; next(); });
-};
 
 // ================= API ROUTES (แชท) =================
 // ✨ ดึงแชท
