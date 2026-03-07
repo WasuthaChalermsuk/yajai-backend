@@ -8,13 +8,14 @@ const webpush = require('web-push');
 
 const http = require('http');
 const { Server } = require('socket.io');
+
+const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { 
     cors: { origin: '*' } 
 });
 
 
-const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); 
 
