@@ -213,7 +213,36 @@ app.post('/api/call-admin', authenticateToken, async (req, res) => {
     } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
-// ⏳ โค้ดสำหรับทดสอบ: ตั้งให้รันสรุปผล "ทุกๆ 1 นาที"
+cron.schedule('* * * * *', async () => {
+    try {
+        // 1. ดึงเวลาปัจจุบัน (แปลงเป็นเวลาไทย Asia/Bangkok ป้องกันปัญหาเวลา Server เพี้ยน)
+        const options = { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false };
+        const currentTime = new Intl.DateTimeFormat('en-US', options).format(new Date());
+
+        // 2. ค้นหายาที่เวลาตรงกับตอนนี้เป๊ะๆ และยัง "ไม่ได้กิน"
+        const medsToTake = await Med.find({ time: currentTime, status: 'ยังไม่ได้กิน' });
+
+        for (let med of medsToTake) {
+            // 3. ส่งแจ้งเตือนเด้งเข้ามือถือ (Web Push) ของคนไข้คนนั้น
+            const userSub = await Sub.findOne({ username: med.owner });
+            if (userSub && userSub.sub) {
+                const payload = JSON.stringify({ 
+                    title: '⏰ ถึงเวลากินยาแล้วครับ!', 
+                    body: `คุณ ${med.owner} อย่าลืมทานยา "${med.name}" (${med.meal}) นะครับ 💊` 
+                });
+                // ส่ง Push แจ้งเตือน
+                await webpush.sendNotification(userSub.sub, payload).catch(err => console.log('Push Error:', err));
+            }
+
+            // 4. (แถม) ส่งแจ้งเตือนเข้า LINE กลุ่มด้วย เพื่อให้ผู้ดูแลรู้
+            await sendLineMessage(`⏰ แจ้งเตือน: ถึงเวลากินยา "${med.name}" ของคุณ ${med.owner} แล้วครับ!`);
+        }
+    } catch (err) {
+        console.error('Error in Reminder Cron:', err);
+    }
+});
+
+
 cron.schedule('0 0 * * *', async () => {
     console.log("กำลังสรุปผลการกินยา...");
     const today = new Date().toLocaleDateString('th-TH');
