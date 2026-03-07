@@ -83,21 +83,41 @@ io.on('connection', (socket) => {
 });
 
 app.post('/api/messages', authenticateToken, async (req, res) => {
-    const { receiver, text, image } = req.body; // ✨ รับ image เพิ่มเข้ามา
+    const { receiver, text, image } = req.body; 
+    
+    // 1. บันทึกลง Database
     const newMsg = new Message({ 
         sender: req.user.username, 
         receiver, 
         text, 
-        image // ✨ เก็บลง DB
+        image 
     });
     await newMsg.save();
 
-    // ปรับการแจ้งเตือน LINE ให้บอกว่ามีการส่งรูป
+    // 2. ✨ ตะโกนบอกหน้าเว็บให้โหลดแชทใหม่ทันที (Socket.IO)
+    io.emit('chatUpdated');
+
+    // 3. จัดการแจ้งเตือน (ถ้าคนไข้ส่งหาแอดมิน)
     if (req.user.username !== 'admin' && receiver === 'admin') {
-        let lineNotifyText = `💬 ข้อความจาก ${req.user.username}: ${text || ''}`;
+        
+        // --- ส่วนของ LINE Bot ---
+        let lineNotifyText = `💬 แชทจาก ${req.user.username}:\n"${text || ''}"`;
         if (image) lineNotifyText += `\n🖼️ [ส่งรูปภาพมาด้วย]`;
         await sendLineMessage(lineNotifyText);
+
+        // --- ส่วนของ Web Push (เด้งเตือนในคอมแอดมิน) ---
+        try {
+            const adminSub = await Sub.findOne({ username: 'admin' });
+            if (adminSub && adminSub.sub) {
+                let pushBody = text || 'ส่งรูปภาพมาให้คุณ 🖼️'; // ถ้าส่งแต่รูป ไม่มีข้อความ ให้ขึ้นเตือนแบบนี้
+                await webpush.sendNotification(adminSub.sub, JSON.stringify({ 
+                    title: `แชทใหม่จาก ${req.user.username}`, 
+                    body: pushBody 
+                }));
+            }
+        } catch(err) { console.log('Push chat err', err); }
     }
+
     res.status(201).json(newMsg);
 });
 
@@ -131,25 +151,6 @@ app.get('/api/messages/:target', authenticateToken, async (req, res) => {
     res.json(msgs);
 });
 
-// ✨ ส่งแชท
-app.post('/api/messages', authenticateToken, async (req, res) => {
-    const { receiver, text } = req.body;
-    const newMsg = new Message({ sender: req.user.username, receiver, text });
-    await newMsg.save();
-
-    // ถ้าคนไข้ส่งหาแอดมิน ให้เด้งเข้า LINE บอทด้วย!
-    if (req.user.username !== 'admin' && receiver === 'admin') {
-        await sendLineMessage(`💬 มีข้อความแชทใหม่จากคุณ ${req.user.username}:\n"${text}"`);
-        
-        try {
-            const adminSub = await Sub.findOne({ username: 'admin' });
-            if (adminSub && adminSub.sub) {
-                await webpush.sendNotification(adminSub.sub, JSON.stringify({ title: `แชทจาก ${req.user.username}`, body: text }));
-            }
-        } catch(err) { console.log('Push chat err', err); }
-    }
-    res.status(201).json(newMsg);
-});
 
 // ================= API ROUTES (ระบบเดิม) =================
 app.post('/api/register', async (req, res) => {
