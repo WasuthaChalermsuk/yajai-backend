@@ -183,6 +183,7 @@ app.get('/api/meds', authenticateToken, async (req, res) => {
 app.post('/api/meds', authenticateToken, async (req, res) => {
     const newMed = new Med({ name: req.body.name, time: req.body.time, meal: req.body.meal || 'เช้า', status: 'ยังไม่ได้กิน', owner: req.body.patientName || req.user.username, stock: req.body.stock || 30, imageUrl: req.body.imageUrl || '' });
     await newMed.save(); 
+    io.emit('medsUpdated');
     try {
         const userSub = await Sub.findOne({ username: newMed.owner });
         if (userSub && userSub.sub) { await webpush.sendNotification(userSub.sub, JSON.stringify({ title: 'YaJai 💊', body: `คุณหมอสั่งยาใหม่: ${newMed.name}` })); }
@@ -192,7 +193,6 @@ app.post('/api/meds', authenticateToken, async (req, res) => {
 
 app.put('/api/meds/edit/:id', authenticateToken, async (req, res) => {
     const updatedMed = await Med.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
-    io.emit('medsUpdated');
     res.json({ id: updatedMed._id.toString(), name: updatedMed.name, time: updatedMed.time, meal: updatedMed.meal, status: updatedMed.status, owner: updatedMed.owner, stock: updatedMed.stock, imageUrl: updatedMed.imageUrl });
 });
 
@@ -202,6 +202,7 @@ app.put('/api/meds/:id', authenticateToken, async (req, res) => {
         med.status = 'กินแล้ว 💖'; 
         if (med.stock > 0) med.stock -= 1; 
         await med.save(); 
+        io.emit('medsUpdated');
         let lineMessage = `✅ คุณ ${med.owner} กินยา "${med.name}" เรียบร้อยแล้วครับ (เหลือ ${med.stock} เม็ด) 💖`;
         try {
             const adminSub = await Sub.findOne({ username: 'admin' });
@@ -222,8 +223,11 @@ app.put('/api/meds/:id', authenticateToken, async (req, res) => {
 });
 
 app.put('/api/meds/reset/all', authenticateToken, async (req, res) => { await Med.updateMany({}, { status: 'ยังไม่ได้กิน' }); res.json({ message: 'รีเซ็ตสำเร็จ' }); });
-app.delete('/api/meds/:id', authenticateToken, async (req, res) => { await Med.findOneAndDelete({ _id: req.params.id }); res.sendStatus(204); });
+app.delete('/api/meds/:id', authenticateToken, async (req, res) => { await Med.findOneAndDelete({ _id: req.params.id });
+io.emit('medsUpdated'); res.sendStatus(204); });
+
 app.get('/api/history', authenticateToken, async (req, res) => { res.json(req.user.username === 'admin' ? await History.find().sort({ _id: -1 }).limit(50) : await History.find({ owner: req.user.username }).sort({ _id: -1 }).limit(14)); });
+
 app.post('/api/call-admin', authenticateToken, async (req, res) => {
     try {
         await sendLineMessage(`🚨 ด่วน! คุณ ${req.user.username} กดปุ่มเรียกหาผู้ดูแลครับ! รีบไปดูหน่อยน้า`);
