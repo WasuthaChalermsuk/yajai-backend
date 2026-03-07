@@ -6,6 +6,14 @@ const mongoose = require('mongoose');
 const cron = require('node-cron'); 
 const webpush = require('web-push');
 
+const http = require('http');
+const { Server } = require('socket.io');
+const server = http.createServer(app);
+const io = new Server(server, { 
+    cors: { origin: '*' } 
+});
+
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); 
@@ -64,6 +72,14 @@ const sendLineMessage = async (textMsg) => {
         });
     } catch (err) { console.error('❌ LINE Bot Push Error:', err); }
 };
+
+io.on('connection', (socket) => {
+    console.log('⚡ มีคนเชื่อมต่อ Socket.IO เข้ามาแล้ว! ID:', socket.id);
+    
+    socket.on('disconnect', () => {
+        console.log('❌ มีคนปิดเว็บออกไป');
+    });
+});
 
 app.post('/api/messages', authenticateToken, async (req, res) => {
     const { receiver, text, image } = req.body; // ✨ รับ image เพิ่มเข้ามา
