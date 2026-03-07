@@ -157,6 +157,7 @@ app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
     if (await User.findOne({ username })) return res.status(400).json({ message: 'มีชื่อผู้ใช้นี้แล้ว' });
     await new User({ username, password: await bcrypt.hash(password, 10) }).save();
+    io.emit('patientsUpdated');
     res.status(201).json({ token: jwt.sign({ username }, SECRET_KEY), username });
 });
 
