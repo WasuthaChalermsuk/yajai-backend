@@ -213,8 +213,28 @@ app.post('/api/call-admin', authenticateToken, async (req, res) => {
     } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
-cron.schedule('* * * * *', async () => { /* เดิม */ });
-cron.schedule('0 0 * * *', async () => { /* เดิม */ });
+// ⏳ โค้ดสำหรับทดสอบ: ตั้งให้รันสรุปผล "ทุกๆ 1 นาที"
+cron.schedule('* * * * *', async () => {
+    console.log("กำลังสรุปผลการกินยา...");
+    const today = new Date().toLocaleDateString('th-TH');
+    const users = await User.find({ username: { $ne: 'admin' } });
+
+    for (let user of users) {
+        const meds = await Med.find({ owner: user.username });
+        if (meds.length === 0) continue; 
+
+        const total = meds.length;
+        const taken = meds.filter(m => m.status.includes('กินแล้ว')).length;
+        const percent = Math.round((taken / total) * 100);
+
+        await History.findOneAndUpdate(
+            { owner: user.username, date: today },
+            { owner: user.username, date: today, total, taken, percent },
+            { upsert: true, new: true }
+        );
+    }
+    console.log("✅ สรุปผลเรียบร้อย!");
+});
 
 
 // ================= API ROUTES (สมุดบันทึกอาการ) =================
