@@ -214,7 +214,7 @@ app.post('/api/call-admin', authenticateToken, async (req, res) => {
 });
 
 // ⏳ โค้ดสำหรับทดสอบ: ตั้งให้รันสรุปผล "ทุกๆ 1 นาที"
-cron.schedule('* * * * *', async () => {
+cron.schedule('0 0 * * *', async () => {
     console.log("กำลังสรุปผลการกินยา...");
     const today = new Date().toLocaleDateString('th-TH');
     const users = await User.find({ username: { $ne: 'admin' } });
