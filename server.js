@@ -191,6 +191,7 @@ app.post('/api/meds', authenticateToken, async (req, res) => {
 
 app.put('/api/meds/edit/:id', authenticateToken, async (req, res) => {
     const updatedMed = await Med.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
+    io.emit('medsUpdated');
     res.json({ id: updatedMed._id.toString(), name: updatedMed.name, time: updatedMed.time, meal: updatedMed.meal, status: updatedMed.status, owner: updatedMed.owner, stock: updatedMed.stock, imageUrl: updatedMed.imageUrl });
 });
 
@@ -305,4 +306,4 @@ app.get('/api/diary/:target', authenticateToken, async (req, res) => {
 
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
