@@ -239,15 +239,15 @@ app.post('/api/call-admin', authenticateToken, async (req, res) => {
 
 cron.schedule('* * * * *', async () => {
     try {
-        // 1. ดึงเวลาปัจจุบัน (แปลงเป็นเวลาไทย Asia/Bangkok ป้องกันปัญหาเวลา Server เพี้ยน)
+        
         const options = { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false };
         const currentTime = new Intl.DateTimeFormat('en-US', options).format(new Date());
 
-        // 2. ค้นหายาที่เวลาตรงกับตอนนี้เป๊ะๆ และยัง "ไม่ได้กิน"
+        
         const medsToTake = await Med.find({ time: currentTime, status: 'ยังไม่ได้กิน' });
 
         for (let med of medsToTake) {
-            // 3. ส่งแจ้งเตือนเด้งเข้ามือถือ (Web Push) ของคนไข้คนนั้น
+            
             const userSub = await Sub.findOne({ username: med.owner });
             if (userSub && userSub.sub) {
                 const payload = JSON.stringify({ 
@@ -267,7 +267,7 @@ cron.schedule('* * * * *', async () => {
 });
 
 
-cron.schedule('0 0 * * *', async () => {
+cron.schedule('* * * * *', async () => {
     console.log("กำลังสรุปผลการกินยา...");
     const today = new Date().toLocaleDateString('th-TH');
     const users = await User.find({ username: { $ne: 'admin' } });
