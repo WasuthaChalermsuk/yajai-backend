@@ -224,7 +224,17 @@ app.put('/api/meds/:id', authenticateToken, async (req, res) => {
     } else res.sendStatus(404);
 });
 
-app.put('/api/meds/reset/all', authenticateToken, async (req, res) => { await Med.updateMany({}, { status: 'ยังไม่ได้กิน' }); res.json({ message: 'รีเซ็ตสำเร็จ' }); });
+
+app.put('/api/meds/reset/all', authenticateToken, async (req, res) => { 
+    await Med.updateMany({}, { status: 'ยังไม่ได้กิน' }); 
+
+    io.emit('medsUpdated'); 
+    
+    io.emit('dailyReset');
+
+    res.json({ message: 'รีเซ็ตสำเร็จ' }); 
+});
+
 app.delete('/api/meds/:id', authenticateToken, async (req, res) => { await Med.findOneAndDelete({ _id: req.params.id });
 io.emit('medsUpdated'); res.sendStatus(204); });
 
@@ -269,7 +279,7 @@ cron.schedule('* * * * *', async () => {
 
 cron.schedule('0 0 * * *', async () => {
     console.log("กำลังสรุปผลการกินยา...");
-    const today = new Date().toLocaleDateString('th-TH');
+    const today = new Date().toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' });
     const users = await User.find({ username: { $ne: 'admin' } });
 
     for (let user of users) {
@@ -286,7 +296,16 @@ cron.schedule('0 0 * * *', async () => {
             { upsert: true, new: true }
         );
     }
-    console.log("✅ สรุปผลเรียบร้อย!");
+    
+    await Med.updateMany({}, { status: 'ยังไม่ได้กิน' });
+    
+    io.emit('dailyReset'); 
+    io.emit('medsUpdated');
+
+    console.log("✅ สรุปผลและรีเซ็ตยาเรียบร้อย!");
+}, {
+    scheduled: true,
+    timezone: "Asia/Bangkok" 
 });
 
 
